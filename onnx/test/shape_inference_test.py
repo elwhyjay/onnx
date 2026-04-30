@@ -1325,74 +1325,64 @@ class TestShapeInference(TestShapeInferenceHelper):
             opset_imports=[helper.make_opsetid(ONNX_DOMAIN, version)],
         )
 
-    @parameterized.expand(all_versions_for("Resize"))
-    def test_resize_scale_precision_large_dim(self, _, version) -> None:
-        # Regression for #4919: 16_777_217 = 2**24 + 1 is not representable in
-        # float32, so a float32 intermediate truncates the inferred dim by 1.
-        self.skipIf(version < 11, "roi input is from Version 11")
-        graph = self._make_graph(
-            [
+    def _check_resize_scale_precision(
+        self,
+        version: int,
+        scales: tuple[float, ...],
+        expected_last_dim: int,
+    ) -> None:
+        # Shared body for #4919 regression tests. Builds a Resize graph whose
+        # last input dim is 16_777_217 (= 2**24 + 1, the smallest int that
+        # float32 cannot represent) and asserts the inferred output last dim.
+        if version >= 11:
+            inputs = [
                 ("x", TensorProto.INT32, (1, 1, 1, 16777217)),
                 ("roi", TensorProto.FLOAT, (8,)),
                 ("scales", TensorProto.FLOAT, (4,)),
-            ],
-            [make_node("Resize", ["x", "roi", "scales"], ["y"])],
+            ]
+            node = make_node("Resize", ["x", "roi", "scales"], ["y"])
+        else:
+            inputs = [
+                ("x", TensorProto.INT32, (1, 1, 1, 16777217)),
+                ("scales", TensorProto.FLOAT, (4,)),
+            ]
+            node = make_node("Resize", ["x", "scales"], ["y"])
+        graph = self._make_graph(
+            inputs,
+            [node],
             [],
-            initializer=[
-                make_tensor("scales", TensorProto.FLOAT, (4,), (1.0, 1.0, 1.0, 1.0))
-            ],
+            initializer=[make_tensor("scales", TensorProto.FLOAT, (4,), scales)],
         )
         self._assert_inferred(
             graph,
-            [make_tensor_value_info("y", TensorProto.INT32, (1, 1, 1, 16777217))],
+            [
+                make_tensor_value_info(
+                    "y", TensorProto.INT32, (1, 1, 1, expected_last_dim)
+                )
+            ],
             opset_imports=[helper.make_opsetid(ONNX_DOMAIN, version)],
         )
+
+    @parameterized.expand(all_versions_for("Resize"))
+    def test_resize_scale_precision_large_dim(self, _, version) -> None:
+        # Regression for #4919, current-version helper, scale == 1.
+        self.skipIf(version < 11, "roi input is from Version 11")
+        self._check_resize_scale_precision(version, (1.0, 1.0, 1.0, 1.0), 16777217)
 
     @parameterized.expand(all_versions_for("Resize"))
     def test_resize_scale_precision_large_dim_non_unit_scale(self, _, version) -> None:
-        # Regression for #4919: covers scale != 1 path. With float32 the cast of
-        # 16_777_217 collapses to 16_777_216, then * 2 yields 33_554_432 instead
-        # of the correct 33_554_434.
+        # Regression for #4919, current-version helper, scale != 1. With the
+        # float32 intermediate, 16_777_217 collapses to 16_777_216 before the
+        # multiplication, so the inferred dim becomes 33_554_432 instead of
+        # the correct 33_554_434.
         self.skipIf(version < 11, "roi input is from Version 11")
-        graph = self._make_graph(
-            [
-                ("x", TensorProto.INT32, (1, 1, 1, 16777217)),
-                ("roi", TensorProto.FLOAT, (8,)),
-                ("scales", TensorProto.FLOAT, (4,)),
-            ],
-            [make_node("Resize", ["x", "roi", "scales"], ["y"])],
-            [],
-            initializer=[
-                make_tensor("scales", TensorProto.FLOAT, (4,), (1.0, 1.0, 1.0, 2.0))
-            ],
-        )
-        self._assert_inferred(
-            graph,
-            [make_tensor_value_info("y", TensorProto.INT32, (1, 1, 1, 33554434))],
-            opset_imports=[helper.make_opsetid(ONNX_DOMAIN, version)],
-        )
+        self._check_resize_scale_precision(version, (1.0, 1.0, 1.0, 2.0), 33554434)
 
     @parameterized.expand(all_versions_for("Resize"))
     def test_resize_scale_precision_large_dim_opset10(self, _, version) -> None:
-        # Regression for #4919: exercises resizeShapeInferenceHelper_opset7_to_10,
-        # which has the same float32 intermediate as the current-version helper.
+        # Regression for #4919, exercises resizeShapeInferenceHelper_opset7_to_10.
         self.skipIf(version >= 11, "opset 10 Resize takes [x, scales] only")
-        graph = self._make_graph(
-            [
-                ("x", TensorProto.INT32, (1, 1, 1, 16777217)),
-                ("scales", TensorProto.FLOAT, (4,)),
-            ],
-            [make_node("Resize", ["x", "scales"], ["y"])],
-            [],
-            initializer=[
-                make_tensor("scales", TensorProto.FLOAT, (4,), (1.0, 1.0, 1.0, 1.0))
-            ],
-        )
-        self._assert_inferred(
-            graph,
-            [make_tensor_value_info("y", TensorProto.INT32, (1, 1, 1, 16777217))],
-            opset_imports=[helper.make_opsetid(ONNX_DOMAIN, version)],
-        )
+        self._check_resize_scale_precision(version, (1.0, 1.0, 1.0, 1.0), 16777217)
 
     @parameterized.expand(all_versions_for("Resize"))
     def test_resize_scale_and_size_but_one_is_empty(self, _, version) -> None:
