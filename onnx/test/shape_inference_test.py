@@ -1365,7 +1365,7 @@ class TestShapeInference(TestShapeInferenceHelper):
 
     @parameterized.expand(all_versions_for("Resize"))
     def test_resize_scale_precision_large_dim(self, _, version) -> None:
-        # Regression for #4919, current-version helper, scale == 1.
+        # Regression for #4919, current-version helper
         for scale in [1, 2]:
             self._check_resize_scale_precision(
                 version, (1.0, 1.0, 1.0, float(scale)), 16777217 * scale
