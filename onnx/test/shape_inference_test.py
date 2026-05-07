@@ -1366,23 +1366,10 @@ class TestShapeInference(TestShapeInferenceHelper):
     @parameterized.expand(all_versions_for("Resize"))
     def test_resize_scale_precision_large_dim(self, _, version) -> None:
         # Regression for #4919, current-version helper, scale == 1.
-        self.skipIf(version < 11, "roi input is from Version 11")
-        self._check_resize_scale_precision(version, (1.0, 1.0, 1.0, 1.0), 16777217)
-
-    @parameterized.expand(all_versions_for("Resize"))
-    def test_resize_scale_precision_large_dim_non_unit_scale(self, _, version) -> None:
-        # Regression for #4919, current-version helper, scale != 1. With the
-        # float32 intermediate, 16_777_217 collapses to 16_777_216 before the
-        # multiplication, so the inferred dim becomes 33_554_432 instead of
-        # the correct 33_554_434.
-        self.skipIf(version < 11, "roi input is from Version 11")
-        self._check_resize_scale_precision(version, (1.0, 1.0, 1.0, 2.0), 33554434)
-
-    @parameterized.expand(all_versions_for("Resize"))
-    def test_resize_scale_precision_large_dim_opset10(self, _, version) -> None:
-        # Regression for #4919, exercises resizeShapeInferenceHelper_opset7_to_10.
-        self.skipIf(version >= 11, "opset 10 Resize takes [x, scales] only")
-        self._check_resize_scale_precision(version, (1.0, 1.0, 1.0, 1.0), 16777217)
+        for scale in [1, 2]:
+            self._check_resize_scale_precision(
+                version, (1.0, 1.0, 1.0, float(scale)), 16777217 * scale
+            )
 
     @parameterized.expand(all_versions_for("Resize"))
     def test_resize_scale_and_size_but_one_is_empty(self, _, version) -> None:
